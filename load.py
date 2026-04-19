@@ -47,7 +47,7 @@ def load_csvs(spark, dir_path):
         .drop("resource:project_id") \
         .withColumn(
             'start_time',
-            date_trunc('minute', col('start_time')).cast('timestamp')
+            (date_trunc('minute', col('start_time')) - expr("(minute(start_time) % 2) * interval 1 minute")).cast('timestamp')
         ) \
         .sort('start_time') \
         .distinct() \
