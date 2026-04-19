@@ -10,7 +10,9 @@ def main(memory_path, busy_path, cpu_path, request_path):
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
 
     busy_df = load_csvs(spark, busy_path)
-    memory_df = load_csvs(spark, memory_path)
+    memory_df = load_csvs(spark, memory_path) \
+        .filter(col('metric:area') == 'heap') \
+        .drop("metric:area")
     cpu_df = load_csvs(spark, cpu_path)
     request_df = load_csvs(spark, request_path)
 
@@ -50,7 +52,6 @@ def load_csvs(spark, dir_path):
         .drop("value_type") \
         .drop("resource_type") \
         .drop("end_time") \
-        .drop("metric:area") \
         .drop("metric:top_level_controller_name") \
         .drop("metric:top_level_controller_type") \
         .drop("resource:cluster") \
