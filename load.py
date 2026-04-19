@@ -7,7 +7,7 @@ from pyspark.sql.functions import col, date_trunc, expr
 import typer
 
 # Load a single CSV file
-def main(memory_path, busy_path):
+def main(memory_path, busy_path, cpu_path, request_path):
     # Initialize Spark Session
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
 
@@ -18,6 +18,14 @@ def main(memory_path, busy_path):
     memory_df = load_csvs(spark, memory_path)
     memory_df.show(truncate=30)
     print(memory_df.count())
+
+    cpu_df = load_csvs(spark, cpu_path)
+    cpu_df.show(truncate=30)
+    print(cpu_df.count())
+
+    request_df = load_csvs(spark, request_path)
+    request_df.show(truncate=30)
+    print(request_df.count())
 
 def load_csvs(spark, dir_path):
     paths = glob.glob(dir_path + "/*.csv")
