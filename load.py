@@ -2,7 +2,7 @@
 import glob
 
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import col, date_trunc, expr, last, regexp_extract
+from pyspark.sql.functions import col, date_trunc, expr, lag, last, regexp_extract
 
 import typer
 
@@ -17,6 +17,7 @@ def main(memory_path, busy_path, cpu_path, request_path):
     request_df = load_csvs(spark, request_path)
 
     cpu_col = pivot_metric(cpu_df).columns[2]
+    req_col = pivot_metric(request_df).columns[2]
 
     combined_df = pivot_metric(busy_df) \
         .join(pivot_metric(memory_df), on=['start_time', 'pod_name'], how='outer') \
@@ -25,7 +26,9 @@ def main(memory_path, busy_path, cpu_path, request_path):
         .sort('start_time', 'pod_name')
 
     pod_time_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, 0)
-    combined_df = combined_df.withColumn(cpu_col, last(col(cpu_col), ignorenulls=True).over(pod_time_window))
+    combined_df = combined_df \
+        .withColumn(cpu_col, last(col(cpu_col), ignorenulls=True).over(pod_time_window)) \
+        .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_window))
 
     combined_df.show(truncate=40)
     print(combined_df.count())
