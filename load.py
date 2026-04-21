@@ -25,10 +25,13 @@ def main(memory_path, busy_path, cpu_path, request_path):
         .join(pivot_metric(request_df), on=['start_time', 'pod_name'], how='outer') \
         .sort('start_time', 'pod_name')
 
+    combined_df = combined_df.repartition('pod_name')
+
     pod_time_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, 0)
+    pod_time_ordered = Window.partitionBy('pod_name').orderBy('start_time')
     combined_df = combined_df \
         .withColumn(cpu_col, last(col(cpu_col), ignorenulls=True).over(pod_time_window)) \
-        .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_window))
+        .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_ordered))
 
     combined_df.show(truncate=40)
     print(combined_df.count())
