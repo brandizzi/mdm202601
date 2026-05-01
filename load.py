@@ -2,7 +2,7 @@
 import glob
 
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead, regexp_extract, when
+from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead, max, regexp_extract, when
 
 import typer
 
@@ -29,22 +29,45 @@ def main(memory_path, busy_path, cpu_path, request_path):
 
     pod_time_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, 0)
     pod_time_ordered = Window.partitionBy('pod_name').orderBy('start_time')
-    pod_time_forward = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(0, Window.unboundedFollowing)
-    cpu_prev_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, -1)
+    MAX_SECONDS_PER_K8S_SETTINGS = 12*60*10
+    MAX_MEMORY_PER_K8S_SETTINGS = 16 * 1024 ** 3
     combined_df = combined_df \
-        .withColumn('_cpu_prev', last(col(cpu_col), ignorenulls=True).over(cpu_prev_window)) \
-        .withColumn('_cpu_diff', when(col(cpu_col).isNotNull(), col(cpu_col) - col('_cpu_prev'))) \
-        .withColumn(cpu_col, first(col('_cpu_diff'), ignorenulls=True).over(pod_time_forward)) \
-        .drop('_cpu_prev', '_cpu_diff') \
+        .transform(calculate_cpu_delta(cpu_col)) \
+        .transform(normalize_cpu(pod_time_ordered, MAX_SECONDS_PER_K8S_SETTINGS)) \
         .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_ordered)) \
-        .withColumn('target_memory', lead("jvm_memory_used_bytes", 5).over(pod_time_ordered)) \
-        .withColumn('memory_rate', col('jvm_memory_used_bytes') / (12 * 1024 ** 3)) \
-        .withColumn('target_memory_rate', col('target_memory') / (12 * 1024 ** 3))
+        .transform(normalize_memory(pod_time_ordered, MAX_MEMORY_PER_K8S_SETTINGS))
 
     combined_df.show(truncate=40)
     print(combined_df.count())
+    print(combined_df.agg(max(col('cpu_rate'))).collect())
     return combined_df
 
+
+def calculate_cpu_delta(col_name):
+    forward_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(0, Window.unboundedFollowing)
+    prev_window = forward_window.rowsBetween(Window.unboundedPreceding, -1)
+    def transform(df):
+        return df \
+            .withColumn('_prev', last(col(col_name), ignorenulls=True).over(prev_window)) \
+            .withColumn('_diff', when(col(col_name).isNotNull(), col(col_name) - col('_prev'))) \
+            .withColumn(col_name, first(col('_diff'), ignorenulls=True).over(forward_window)) \
+            .drop('_prev', '_diff')
+    return transform
+
+
+def normalize_memory(ordered_window, max_memory_bytes):
+    def transform(df):
+        return df \
+            .withColumn('target_memory', lead("jvm_memory_used_bytes", 5).over(ordered_window)) \
+            .withColumn('memory_rate', col('jvm_memory_used_bytes') / max_memory_bytes) \
+            .withColumn('target_memory_rate', col('target_memory') / max_memory_bytes)
+    return transform
+
+def normalize_cpu(ordered_window, max_cpu_rate):
+    def transform(df):
+        return df \
+            .withColumn('cpu_rate', col('process_cpu_seconds_total') / max_cpu_rate)
+    return transform
 
 def pivot_metric(df):
     metric_name = df.select(
@@ -58,11 +81,15 @@ def pivot_metric(df):
 
 def load_csvs(spark, dir_path):
     paths = glob.glob(dir_path + "/*.csv")
-    return spark.read.format("csv") \
+    df = spark.read.format("csv") \
         .option("header", "True") \
         .option("inferSchema", "True") \
-        .load(paths) \
-        .filter(col('metric_type') != 'metric_type') \
+        .load(paths)
+    # Ignore duplicate headers from merged files
+    df = df \
+        .filter(col('metric_type') != 'metric_type')
+    # Drop unnecessary columns
+    df = df \
         .drop("metric_kind") \
         .drop("value_type") \
         .drop("resource_type") \
@@ -74,13 +101,16 @@ def load_csvs(spark, dir_path):
         .drop("resource:job") \
         .drop("resource:location") \
         .drop("resource:namespace") \
-        .drop("resource:project_id") \
-        .withColumn(
+        .drop("resource:project_id")
+    # Round down to the nearest even minute
+    df = df \
+        .withColumn(  
             'start_time',
             (date_trunc('minute', col('start_time')) - expr("(minute(start_time) % 2) * interval 1 minute")).cast('timestamp')
         ) \
         .sort('start_time', ascending=True) \
         .distinct()
+    return df
 
 
 if __name__ == "__main__":
