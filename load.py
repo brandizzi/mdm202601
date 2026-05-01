@@ -43,7 +43,8 @@ def main(memory_path, busy_path, cpu_path, request_path, output_path: str = "out
     print(combined_df.count())
     print(combined_df.agg(max(col('cpu_rate'))).collect())
     combined_df.filter(col('threshold_passed')).show(truncate=40)
-    combined_df.write.mode('overwrite').parquet(output_path)
+    combined_df.write.mode('overwrite').parquet(output_path+'.parquet')
+    combined_df.coalesce(1).write.mode('overwrite').option('header', True).csv(output_path+'.csv') 
     return combined_df
 
 
@@ -118,4 +119,4 @@ def load_csvs(spark, dir_path, expand=True):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+    main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
