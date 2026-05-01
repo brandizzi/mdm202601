@@ -2,7 +2,7 @@
 import glob
 
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import col, date_trunc, expr, lag, last, regexp_extract
+from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead, regexp_extract, when
 
 import typer
 
@@ -29,12 +29,18 @@ def main(memory_path, busy_path, cpu_path, request_path):
 
     pod_time_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, 0)
     pod_time_ordered = Window.partitionBy('pod_name').orderBy('start_time')
+    pod_time_forward = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(0, Window.unboundedFollowing)
+    cpu_prev_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, -1)
     combined_df = combined_df \
-        .withColumn(cpu_col, last(col(cpu_col), ignorenulls=True).over(pod_time_window)) \
+        .withColumn('_cpu_prev', last(col(cpu_col), ignorenulls=True).over(cpu_prev_window)) \
+        .withColumn('_cpu_diff', when(col(cpu_col).isNotNull(), col(cpu_col) - col('_cpu_prev'))) \
+        .withColumn(cpu_col, first(col('_cpu_diff'), ignorenulls=True).over(pod_time_forward)) \
+        .drop('_cpu_prev', '_cpu_diff') \
         .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_ordered))
 
     combined_df.show(truncate=40)
     print(combined_df.count())
+    return combined_df
 
 
 def pivot_metric(df):
