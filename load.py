@@ -4,8 +4,6 @@ import glob
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead, max, regexp_extract, when
 
-import typer
-
 def main(memory_path, busy_path, cpu_path, request_path, output_path: str = "output.parquet"):
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
 
@@ -122,4 +120,4 @@ def load_csvs(spark, dir_path, expand=True):
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
