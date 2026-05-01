@@ -82,8 +82,11 @@ def pivot_metric(df):
         col('value').alias(metric_name)
     )
 
-def load_csvs(spark, dir_path):
-    paths = glob.glob(dir_path + "/*.csv")
+def load_csvs(spark, dir_path, expand=True):
+    if expand:
+        paths = glob.glob(dir_path + "/*.csv")
+    else:
+        paths = [dir_path]
     df = spark.read.format("csv") \
         .option("header", "True") \
         .option("inferSchema", "True") \
