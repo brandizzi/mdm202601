@@ -30,16 +30,18 @@ def main(memory_path, busy_path, cpu_path, request_path):
     pod_time_window = Window.partitionBy('pod_name').orderBy('start_time').rowsBetween(Window.unboundedPreceding, 0)
     pod_time_ordered = Window.partitionBy('pod_name').orderBy('start_time')
     MAX_SECONDS_PER_K8S_SETTINGS = 12*60*10
-    MAX_MEMORY_PER_K8S_SETTINGS = 16 * 1024 ** 3
+    MAX_MEMORY_PER_JVM_SETTINGS = 12 * 1024 ** 3
     combined_df = combined_df \
         .transform(calculate_cpu_delta(cpu_col)) \
         .transform(normalize_cpu(pod_time_ordered, MAX_SECONDS_PER_K8S_SETTINGS)) \
         .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_ordered)) \
-        .transform(normalize_memory(pod_time_ordered, MAX_MEMORY_PER_K8S_SETTINGS))
+        .transform(normalize_memory(pod_time_ordered, MAX_MEMORY_PER_JVM_SETTINGS)) \
+        .withColumn('threshold_passed', col('memory_rate') >= 0.8)
 
     combined_df.show(truncate=40)
     print(combined_df.count())
     print(combined_df.agg(max(col('cpu_rate'))).collect())
+    combined_df.filter(col('threshold_passed')).show(truncate=40)
     return combined_df
 
 
