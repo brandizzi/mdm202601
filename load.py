@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import glob
+import sys
 
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead, max, regexp_extract, when
@@ -7,14 +8,14 @@ from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead,
 def main(memory_path, busy_path, cpu_path, request_path, output_path: str = "output.parquet"):
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
 
-    busy_df = load_csvs(spark, busy_path)
+    busy_df = load_csvs(spark, busy_path, expand=False)
     # We sum heap and nonheap
-    memory_df = load_csvs(spark, memory_path) \
+    memory_df = load_csvs(spark, memory_path, expand=False) \
         .groupBy('start_time', 'metric:pod', 'metric_type') \
         .sum('value') \
         .withColumnRenamed('sum(value)', 'value')
-    cpu_df = load_csvs(spark, cpu_path)
-    request_df = load_csvs(spark, request_path)
+    cpu_df = load_csvs(spark, cpu_path, expand=False)
+    request_df = load_csvs(spark, request_path, expand=False)
 
     cpu_col = pivot_metric(cpu_df).columns[2]
     req_col = pivot_metric(request_df).columns[2]
@@ -83,14 +84,11 @@ def pivot_metric(df):
     )
 
 def load_csvs(spark, dir_path, expand=True):
-    if expand:
-        paths = glob.glob(dir_path + "/*.csv")
-    else:
-        paths = [dir_path]
+    path = dir_path
     df = spark.read.format("csv") \
         .option("header", "True") \
         .option("inferSchema", "True") \
-        .load(paths)
+        .load(path)
     # Ignore duplicate headers from merged files
     df = df \
         .filter(col('metric_type') != 'metric_type')
