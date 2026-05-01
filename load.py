@@ -36,7 +36,10 @@ def main(memory_path, busy_path, cpu_path, request_path):
         .withColumn('_cpu_diff', when(col(cpu_col).isNotNull(), col(cpu_col) - col('_cpu_prev'))) \
         .withColumn(cpu_col, first(col('_cpu_diff'), ignorenulls=True).over(pod_time_forward)) \
         .drop('_cpu_prev', '_cpu_diff') \
-        .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_ordered))
+        .withColumn(req_col, col(req_col) - lag(col(req_col), 1).over(pod_time_ordered)) \
+        .withColumn('target_memory', lead("jvm_memory_used_bytes", 5).over(pod_time_ordered)) \
+        .withColumn('memory_rate', col('jvm_memory_used_bytes') / (12 * 1024 ** 3)) \
+        .withColumn('target_memory_rate', col('target_memory') / (12 * 1024 ** 3))
 
     combined_df.show(truncate=40)
     print(combined_df.count())
