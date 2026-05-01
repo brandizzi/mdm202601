@@ -6,7 +6,7 @@ from pyspark.sql.functions import col, date_trunc, expr, first, lag, last, lead,
 
 import typer
 
-def main(memory_path, busy_path, cpu_path, request_path):
+def main(memory_path, busy_path, cpu_path, request_path, output_path: str = "output.parquet"):
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
 
     busy_df = load_csvs(spark, busy_path)
@@ -42,6 +42,7 @@ def main(memory_path, busy_path, cpu_path, request_path):
     print(combined_df.count())
     print(combined_df.agg(max(col('cpu_rate'))).collect())
     combined_df.filter(col('threshold_passed')).show(truncate=40)
+    combined_df.write.mode('overwrite').parquet(output_path)
     return combined_df
 
 
