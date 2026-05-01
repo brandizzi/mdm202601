@@ -10,9 +10,11 @@ def main(memory_path, busy_path, cpu_path, request_path, output_path: str = "out
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
 
     busy_df = load_csvs(spark, busy_path)
+    # We sum heap and nonheap
     memory_df = load_csvs(spark, memory_path) \
-        .filter(col('metric:area') == 'heap') \
-        .drop("metric:area")
+        .groupBy('start_time', 'metric:pod', 'metric_type') \
+        .sum('value') \
+        .withColumnRenamed('sum(value)', 'value')
     cpu_df = load_csvs(spark, cpu_path)
     request_df = load_csvs(spark, request_path)
 
