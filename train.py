@@ -5,7 +5,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
 
 from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.classification import DecisionTreeClassifier
+from pyspark.ml.classification import GBTClassifier
+from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
 
 def main(input_path: str, output_path: str):
     spark = SparkSession.builder.appName("CSVLoader").getOrCreate()
@@ -71,14 +72,32 @@ def main(input_path: str, output_path: str):
     train_df = df.join(train_pods, "pod_name")
     test_df  = df.join(test_pods,  "pod_name")
     
-    model = DecisionTreeClassifier(
+    model = GBTClassifier(
         labelCol="label",
-        featuresCol="features"
+        featuresCol="features",
+        maxIter=50
     )
 
     model = model.fit(train_df)
 
-    df.show()
+    predictions = model.transform(test_df)
+
+    binary_eval = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
+    multi_eval = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction")
+
+    auc        = binary_eval.setMetricName("areaUnderROC").evaluate(predictions)
+    accuracy   = multi_eval.setMetricName("accuracy").evaluate(predictions)
+    precision  = multi_eval.setMetricName("weightedPrecision").evaluate(predictions)
+    recall     = multi_eval.setMetricName("weightedRecall").evaluate(predictions)
+    f1         = multi_eval.setMetricName("f1").evaluate(predictions)
+
+    print(f"AUC-ROC:   {auc:.4f}")
+    print(f"Accuracy:  {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall:    {recall:.4f}")
+    print(f"F1:        {f1:.4f}")
+
+    predictions.select("pod_name", "start_time", "label", "prediction", "probability").show(truncate=False)
 
 def assemble_features(df, LAGS):
     FEATURE_PREFIXES = ["mem", "cpu", "req", "thr"]
